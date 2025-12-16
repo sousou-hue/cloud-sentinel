@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloud Sentinel Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f2f5; color: #333; display: flex; justify-content: center; padding: 50px; }
+        .container { width: 100%; max-width: 800px; background: white; padding: 40px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #7f8c8d; margin-bottom: 40px; }
+        
+        .card { border: 1px solid #eee; padding: 25px; border-radius: 10px; margin-bottom: 25px; transition: transform 0.2s; }
+        .card:hover { transform: translateY(-3px); box-shadow: 0 5px 15px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 10px; }
+        
+        button { background-color: #3498db; color: white; border: none; padding: 12px 25px; border-radius: 8px; cursor: pointer; font-size: 16px; width: 100%; transition: background 0.3s; }
+        button:hover { background-color: #2980b9; }
+        button.danger { background-color: #e74c3c; }
+        button.danger:hover { background-color: #c0392b; }
+        
+        pre { background: #2d3436; color: #fab1a0; padding: 15px; border-radius: 8px; overflow-x: auto; margin-top: 15px; min-height: 60px; font-size: 14px; }
+        input[type="file"] { margin-bottom: 15px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>🛡️ Cloud Sentinel</h1>
+    <p class="subtitle">Plateforme d'Audit de Sécurité DevSecOps</p>
+
+    <!-- ZONE 1 : AUDIT DU CODE (Terraform) -->
+    <div class="card">
+        <h2>📄 1. Audit de Code (IaC)</h2>
+        <p>Analyse préventive des fichiers Terraform avant déploiement.</p>
+        <input type="file" id="fileInput" accept=".tf">
+        <button onclick="scanCode()">🔍 Analyser le fichier</button>
+        <pre id="staticResult">En attente...</pre>
+    </div>
+
+    <!-- ZONE 2 : AUDIT DU CLOUD (AWS) -->
+    <div class="card">
+        <h2>☁️ 2. Audit Cloud (Runtime)</h2>
+        <p>Scan en temps réel de l'infrastructure AWS via IAM Role.</p>
+        <button class="danger" onclick="scanCloud()">🚀 Lancer l'Audit Live AWS</button>
+        <pre id="cloudResult">En attente...</pre>
+    </div>
+</div>
+
+<script>
+    // 👇 METS TON IP ICI (Garde le http:// et les guillemets)
+    const API_URL = "http://44.223.31.57"; 
+
+    async function scanCode() {
+        const fileInput = document.getElementById('fileInput');
+        const output = document.getElementById('staticResult');
+        
+        if(fileInput.files.length === 0) { 
+            alert("Merci de choisir un fichier .tf !"); 
+            return; 
+        }
+
+        output.innerText = "⏳ Envoi au serveur et analyse en cours...";
+        
+        const formData = new FormData();
+        formData.append("file", fileInput.files[0]);
+
+        try {
+            const res = await fetch(API_URL + "/scan-code", { method: 'POST', body: formData });
+            const data = await res.json();
+            output.innerText = "✅ RÉSULTAT :\n" + JSON.stringify(data, null, 2);
+        } catch (error) {
+            output.innerText = "❌ Erreur : Le serveur ne répond pas.\n Vérifie que ton IP est bonne dans le code HTML.";
+        }
+    }
+
+    async function scanCloud() {
+        const output = document.getElementById('cloudResult');
+        output.innerText = "⏳ Connexion à AWS et audit en cours...";
+        
+        try {
+            const res = await fetch(API_URL + "/scan-cloud", { method: 'POST' });
+            const data = await res.json();
+            output.innerText = "✅ RAPPORT :\n" + JSON.stringify(data, null, 2);
+        } catch (error) {
+            output.innerText = "❌ Erreur : Impossible de contacter l'API.";
+        }
+    }
+</script>
+
+</body>
+</html>
