@@ -11,10 +11,10 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# 1. LA BASE DE DONNÉES (Ajouté pour le respect du cahier des charges)
+# 1. LA BASE DE DONNÉES
 resource "aws_dynamodb_table" "history_table" {
   name           = "SentinelHistory"
-  billing_mode   = "PAY_PER_REQUEST" # Gratuit si peu utilisé
+  billing_mode   = "PAY_PER_REQUEST"
   hash_key       = "scan_id"
   attribute {
     name = "scan_id"
@@ -22,7 +22,7 @@ resource "aws_dynamodb_table" "history_table" {
   }
 }
 
-# 2. Rôle IAM (Pour que le serveur puisse scanner AWS et écrire en DB)
+# 2. Rôle IAM
 resource "aws_iam_role" "ec2_role" {
   name = "SentinelEC2Role_Pro"
   assume_role_policy = jsonencode({
@@ -31,7 +31,6 @@ resource "aws_iam_role" "ec2_role" {
   })
 }
 
-# On donne les droits d'admin pour être sûr que Prowler puisse tout scanner sans bloquer
 resource "aws_iam_role_policy_attachment" "admin_rights" {
   role       = aws_iam_role.ec2_role.name
   policy_arn = "arn:aws:iam::aws:policy/AdministratorAccess"
@@ -42,27 +41,47 @@ resource "aws_iam_instance_profile" "ec2_profile" {
   role = aws_iam_role.ec2_role.name
 }
 
-# 3. Security Group
+# 3. Security Group (CORRIGÉ ICI : Sur plusieurs lignes)
 resource "aws_security_group" "app_sg" {
   name = "sentinel-sg-pro"
-  ingress { from_port = 80 to_port = 80 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }
-  ingress { from_port = 22 to_port = 22 protocol = "tcp" cidr_blocks = ["0.0.0.0/0"] }
-  egress { from_port = 0 to_port = 0 protocol = "-1" cidr_blocks = ["0.0.0.0/0"] }
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
 }
 
 # 4. Bucket S3 Frontend
 resource "aws_s3_bucket" "frontend_bucket" {
-  bucket = "cloud-sentinel-front-soumia-wiame-amine" # <--- CHANGE ICI
+  # 👇 CHANGE CE NOM 👇
+  bucket = "cloud-sentinel-front-soumia-wiame-amine"
+  force_destroy = true
 }
 
 # 5. Serveur EC2
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
+  instance_type = "t3.micro"
   key_name      = "sentinel-key"
   
   vpc_security_group_ids = [aws_security_group.app_sg.id]
-  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name # Important pour Prowler !
+  iam_instance_profile   = aws_iam_instance_profile.ec2_profile.name
 
   user_data = <<-EOF
               #!/bin/bash
