@@ -1,4 +1,6 @@
 fastapi
 uvicorn
 python-multipart
-requests
+boto3
+checkov
+prowler

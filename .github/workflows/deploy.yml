@@ -1,17 +1,42 @@
-name: Deploy to AWS
+name: DevSecOps Pipeline
 
 on:
   push:
-    branches: [ "main" ] # Se lance quand on envoie le code
+    branches: [ "main" ]
 
 jobs:
-  deploy:
+  security-check:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout du code
+      - name: Checkout Code
         uses: actions/checkout@v3
 
+      # 1. Scan de Secrets (TruffleHog)
+      - name: TruffleHog Secret Scan
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.repository.default_branch }}
+          head: HEAD
+          extra_args: --debug --only-verified
+
+      # 2. Scan de Vulnérabilités (Trivy)
+      - name: Build image for scanning
+        run: cd app && docker build -t test-image .
+      
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'test-image'
+          format: 'table'
+          exit-code: '0' # On met 0 pour ne pas bloquer le déploiement si faille (pour le projet école)
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+
+  deploy:
+    needs: security-check
+    runs-on: ubuntu-latest
+    steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@master
         with:
@@ -19,23 +44,14 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
           script: |
-            # 1. On arrête l'ancienne version si elle existe
-            sudo docker stop sentinel || true
-            sudo docker rm sentinel || true
-
-            # 2. On télécharge le code
-            # Si le dossier n'existe pas, on le clone (CHANGE LE PSEUDO ICI !)
             if [ ! -d "cloud-sentinel" ]; then
-              git clone https://github.com/sousou-hue/cloud-sentinel.git
+              git clone https://github.com/${{ github.repository }}.git cloud-sentinel
             fi
-            
-            # On entre dans le dossier et on met à jour
             cd cloud-sentinel
             git pull origin main
-            
-            # 3. On construit la nouvelle version
             cd app
+            # Reconstruction avec les vrais outils
             sudo docker build -t sentinel-app .
-            
-            # 4. On lance l'application sur le port 80 (Web)
+            sudo docker stop sentinel || true
+            sudo docker rm sentinel || true
             sudo docker run -d -p 80:80 --name sentinel sentinel-app
