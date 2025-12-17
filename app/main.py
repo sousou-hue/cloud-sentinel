@@ -9,7 +9,7 @@ import json
 import re
 from datetime import datetime
 
-app = FastAPI()
+app = FastAPI(
 
 # Connexion DynamoDB
 dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
