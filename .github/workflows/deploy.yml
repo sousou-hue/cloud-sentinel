@@ -11,22 +11,34 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. Scan de Secrets (TruffleHog)
+      # 1. Scan de Secrets
       - name: TruffleHog Secret Scan
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          extra_args: --debug --only-verified
-      # 2. Scan de Vulnérabilités (Trivy)
-      - name: Build image for scanning
-        run: cd app && docker build -t test-image .
-      
+          extra_args: --debug --only-verified 
+
+      # 2. Préparation du Cache Docker (NOUVEAU)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      # 3. Construction optimisée (NOUVEAU)
+      - name: Build Docker Image with Cache
+        uses: docker/build-push-action@v4
+        with:
+          context: ./app
+          load: true
+          tags: test-image:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 4. Scan Trivy
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'test-image'
+          image-ref: 'test-image:latest'
           format: 'table'
-          exit-code: '0' # On met 0 pour ne pas bloquer le déploiement si faille (pour le projet école)
+          exit-code: '0'
           ignore-unfixed: true
           vuln-type: 'os,library'
 
@@ -47,7 +59,7 @@ jobs:
             cd cloud-sentinel
             git pull origin main
             cd app
-            # Reconstruction avec les vrais outils
+            # Sur le serveur, on force le build sans cache pour être sûr d'avoir la dernière version
             sudo docker build -t sentinel-app .
             sudo docker stop sentinel || true
             sudo docker rm sentinel || true
