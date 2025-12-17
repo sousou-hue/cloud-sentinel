@@ -41,7 +41,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "☢️ ALERTE SÉCURITÉ : Secret Détecté !"
-          to: soumia@gmail.com
+          to: eliraouisoumia2003@gmail.com
           from: Sentinel Bot <soumia@gmail.com>
           body: |
             URGENT : Un secret (clé API, mot de passe) a été détecté dans le code.
