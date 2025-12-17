@@ -25,6 +25,7 @@ jobs:
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
+          base: ""
           extra_args: --debug --no-verification # --fail force l'arrêt si secret trouvé
 
       # 🚨 CAS 1 : ALERTE SECRET (Se lance uniquement si TruffleHog échoue)
