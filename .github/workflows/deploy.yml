@@ -87,7 +87,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "🔴 ÉCHEC : Erreur de Construction Docker"
-          to: soumia@gmail.com
+          to: eliraouisoumia2003@gmail.com
           from: Sentinel Bot <soumia@gmail.com>
           body: |
             Le Pipeline a échoué lors de la construction de l'image Docker.
@@ -120,7 +120,7 @@ jobs:
           username: ${{ secrets.MAIL_USERNAME }}
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "🛡️ ALERTE SÉCURITÉ : Faille Critique Docker !"
-          to: soumia@gmail.com
+          to: eliraouisoumia2003@gmail.com
           from: Sentinel Bot <soumia@gmail.com>
           body: |
             STOP : Une vulnérabilité CRITIQUE a été trouvée dans l'image Docker.
