@@ -161,7 +161,7 @@ jobs:
           password: ${{ secrets.MAIL_PASSWORD }}
           subject: "🔴 ÉCHEC : Le serveur ne répond pas"
           to: soumia@gmail.com
-          from: Sentinel Bot <soumia@gmail.com>
+          from: Sentinel Bot <eliraouisoumia2003@gmail.com>
           body: |
             Impossible de se connecter au serveur EC2 ou de lancer le conteneur.
             Vérifiez l'état du serveur AWS et les clés SSH.
