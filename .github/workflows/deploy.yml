@@ -1,4 +1,4 @@
-name: DevSecOps Pro (Docker Hub)
+name: DevSecOps Pro (Notifications Intelligentes)
 
 on:
   push:
@@ -8,72 +8,157 @@ on:
       - 'infra/**'
 
 jobs:
-  # JOB 1 : SÉCURITÉ, BUILD ET PUSH VERS DOCKER HUB
+  # ====================================================
+  # JOB 1 : SÉCURITÉ & CONSTRUCTION
+  # ====================================================
   build-secure-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. Scan de Secrets (TruffleHog) - Ta config
+      # ----------------------------------------------------
+      # 1. SCAN DE SECRETS (TruffleHog)
+      # ----------------------------------------------------
       - name: TruffleHog Secret Scan
+        id: trufflehog
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          extra_args: --debug --only-verified
+          extra_args: --debug --only-verified --fail # --fail force l'arrêt si secret trouvé
 
-      # 2. Connexion à Docker Hub (Nécessaire pour envoyer l'image)
+      # 🚨 CAS 1 : ALERTE SECRET (Se lance uniquement si TruffleHog échoue)
+      - name: ☢️ Email Alerte Secret
+        if: failure() && steps.trufflehog.outcome == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "☢️ ALERTE SÉCURITÉ : Secret Détecté !"
+          to: soumia@gmail.com
+          from: Sentinel Bot <soumia@gmail.com>
+          body: |
+            URGENT : Un secret (clé API, mot de passe) a été détecté dans le code.
+            Le déploiement a été bloqué immédiatement.
+            
+            👤 Auteur : ${{ github.actor }}
+            📝 Message : ${{ github.event.head_commit.message }}
+            
+            ACTION REQUISE :
+            1. Supprimez le secret du code.
+            2. Changez le mot de passe/clé (considérez-le comme compromis).
+            3. Nettoyez l'historique Git.
+
+      # ----------------------------------------------------
+      # 2. CONSTRUCTION DOCKER
+      # ----------------------------------------------------
       - name: Login to Docker Hub
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # 3. Préparation du moteur de build (Buildx)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # 4. Construction et Envoi sur Docker Hub (Avec Cache Magique)
       - name: Build and Push to Docker Hub
+        id: docker_build
         uses: docker/build-push-action@v4
         with:
           context: ./app
-          push: true # On envoie l'image en ligne
+          push: true
           tags: ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
-          # Optimisation du cache pour aller vite les prochaines fois
           cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:buildcache
           cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:buildcache,mode=max
 
-      # 5. Scan de Vulnérabilités (Trivy) sur l'image en ligne
+      # 🚨 CAS 3 (Partie 1) : ÉCHEC TECHNIQUE (Build)
+      - name: 🔴 Email Échec Build
+        if: failure() && steps.docker_build.outcome == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "🔴 ÉCHEC : Erreur de Construction Docker"
+          to: soumia@gmail.com
+          from: Sentinel Bot <soumia@gmail.com>
+          body: |
+            Le Pipeline a échoué lors de la construction de l'image Docker.
+            Vérifiez le Dockerfile ou les dépendances Python.
+            
+            Voir les logs : https://github.com/${{ github.repository }}/actions
+
+      # ----------------------------------------------------
+      # 3. SCAN DE VULNÉRABILITÉS (Trivy)
+      # ----------------------------------------------------
       - name: Run Trivy vulnerability scanner
+        id: trivy
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest'
           format: 'table'
-          exit-code: '0' # Ne bloque pas pour l'instant (mettre 1 pour bloquer)
+          # ICI : On met exit-code '1' pour BLOQUER si faille critique trouvée
+          exit-code: '1' 
           ignore-unfixed: true
           vuln-type: 'os,library'
+          severity: 'CRITICAL' # On ne bloque que sur les critiques
 
-  # JOB 2 : DÉPLOIEMENT SUR EC2 (VIA DOCKER HUB)
+      # 🚨 CAS 2 : ALERTE VULNÉRABILITÉ (Se lance uniquement si Trivy échoue)
+      - name: 🛡️ Email Alerte Trivy
+        if: failure() && steps.trivy.outcome == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "🛡️ ALERTE SÉCURITÉ : Faille Critique Docker !"
+          to: soumia@gmail.com
+          from: Sentinel Bot <soumia@gmail.com>
+          body: |
+            STOP : Une vulnérabilité CRITIQUE a été trouvée dans l'image Docker.
+            Le déploiement a été annulé par sécurité.
+            
+            Consultez le rapport Trivy dans les logs GitHub pour voir le détail (CVE).
+            
+            Lien : https://github.com/${{ github.repository }}/actions
+
+  # ====================================================
+  # JOB 2 : DÉPLOIEMENT
+  # ====================================================
   deploy:
     needs: build-secure-push
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
+        id: deploy_ssh
         uses: appleboy/ssh-action@master
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
-          # On passe ton pseudo Docker Hub au script
           envs: DOCKER_USERNAME 
           script: |
-            # 1. On tire la nouvelle image depuis Docker Hub (Ultra rapide)
             sudo docker pull ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
-            
-            # 2. On nettoie l'ancien conteneur
             sudo docker stop sentinel || true
             sudo docker rm sentinel || true
-            
-            # 3. On lance la nouvelle version
             sudo docker run -d -p 80:80 --name sentinel ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
+
+      # 🚨 CAS 3 (Partie 2) : ÉCHEC TECHNIQUE (Deploy)
+      - name: 🔴 Email Échec Déploiement
+        if: failure() && steps.deploy_ssh.outcome == 'failure'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          subject: "🔴 ÉCHEC : Le serveur ne répond pas"
+          to: soumia@gmail.com
+          from: Sentinel Bot <soumia@gmail.com>
+          body: |
+            Impossible de se connecter au serveur EC2 ou de lancer le conteneur.
+            Vérifiez l'état du serveur AWS et les clés SSH.
