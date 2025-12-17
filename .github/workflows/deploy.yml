@@ -1,49 +1,62 @@
-name: DevSecOps Pipeline
+name: DevSecOps Pro (Docker Hub)
 
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'README.md'
+      - 'infra/**'
 
 jobs:
-  security-check:
+  # JOB 1 : SÉCURITÉ, BUILD ET PUSH VERS DOCKER HUB
+  build-secure-push:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      # 1. Scan de Secrets
+      # 1. Scan de Secrets (TruffleHog) - Ta config
       - name: TruffleHog Secret Scan
         uses: trufflesecurity/trufflehog@main
         with:
           path: ./
-          extra_args: --debug --only-verified 
+          extra_args: --debug --only-verified
 
-      # 2. Préparation du Cache Docker (NOUVEAU)
+      # 2. Connexion à Docker Hub (Nécessaire pour envoyer l'image)
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      # 3. Préparation du moteur de build (Buildx)
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      # 3. Construction optimisée (NOUVEAU)
-      - name: Build Docker Image with Cache
+      # 4. Construction et Envoi sur Docker Hub (Avec Cache Magique)
+      - name: Build and Push to Docker Hub
         uses: docker/build-push-action@v4
         with:
           context: ./app
-          load: true
-          tags: test-image:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          push: true # On envoie l'image en ligne
+          tags: ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
+          # Optimisation du cache pour aller vite les prochaines fois
+          cache-from: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:buildcache
+          cache-to: type=registry,ref=${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:buildcache,mode=max
 
-      # 4. Scan Trivy
+      # 5. Scan de Vulnérabilités (Trivy) sur l'image en ligne
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'test-image:latest'
+          image-ref: '${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest'
           format: 'table'
-          exit-code: '0'
+          exit-code: '0' # Ne bloque pas pour l'instant (mettre 1 pour bloquer)
           ignore-unfixed: true
           vuln-type: 'os,library'
 
+  # JOB 2 : DÉPLOIEMENT SUR EC2 (VIA DOCKER HUB)
   deploy:
-    needs: security-check
+    needs: build-secure-push
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -52,15 +65,15 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_KEY }}
+          # On passe ton pseudo Docker Hub au script
+          envs: DOCKER_USERNAME 
           script: |
-            if [ ! -d "cloud-sentinel" ]; then
-              git clone https://github.com/${{ github.repository }}.git cloud-sentinel
-            fi
-            cd cloud-sentinel
-            git pull origin main
-            cd app
-            # Sur le serveur, on force le build sans cache pour être sûr d'avoir la dernière version
-            sudo docker build -t sentinel-app .
+            # 1. On tire la nouvelle image depuis Docker Hub (Ultra rapide)
+            sudo docker pull ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
+            
+            # 2. On nettoie l'ancien conteneur
             sudo docker stop sentinel || true
             sudo docker rm sentinel || true
-            sudo docker run -d -p 80:80 --name sentinel sentinel-app
+            
+            # 3. On lance la nouvelle version
+            sudo docker run -d -p 80:80 --name sentinel ${{ secrets.DOCKER_USERNAME }}/cloud-sentinel:latest
